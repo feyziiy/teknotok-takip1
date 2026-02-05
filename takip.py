@@ -17,7 +17,7 @@ def send_telegram(message):
         pass
 
 def start_tracking():
-    send_telegram("🚀 Takip sistemi başarıyla çalıştırıldı ve XML kontrol ediliyor!")
+    send_telegram("🚀 nöğruyonnn!")
     # XML Çek (Hataları görmezden gelen parser ile)
     response = requests.get(XML_URL, timeout=30)
     response.encoding = 'utf-8'
