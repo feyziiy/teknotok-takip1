@@ -18,7 +18,7 @@ jobs:
           python-version: '3.9'
 
       - name: Kütüphaneleri Kur
-        run: pip install requests
+        run: pip install requests lxml
 
       - name: Takip Kodunu Çalıştır
         run: python takip.py
