@@ -1,5 +1,5 @@
 import requests
-from lxml import etree # Daha esnek okuma için lxml kullanıyoruz
+from lxml import etree
 import json
 import os
 
@@ -11,30 +11,30 @@ HAFIZA_FILE = "urun_takip_hafiza.json"
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=payload)
-    except:
-        pass
+    requests.post(url, json=payload)
 
 def start_tracking():
-    send_telegram("🚀 nöğruyonnn!")
-    # XML Çek (Hataları görmezden gelen parser ile)
+    print("XML Çekiliyor...")
     response = requests.get(XML_URL, timeout=30)
     response.encoding = 'utf-8'
     
-    # Bozuk karakterleri temizleyerek oku
     parser = etree.XMLParser(recover=True, encoding='utf-8')
     root = etree.fromstring(response.content, parser=parser)
     
+    # Hafızayı oku
     if os.path.exists(HAFIZA_FILE):
         with open(HAFIZA_FILE, 'r', encoding='utf-8') as f:
-            old_data = json.load(f)
+            try:
+                old_data = json.load(f)
+            except:
+                old_data = {}
     else:
         old_data = {}
 
     new_data = {}
     updates = []
 
+    # XML içindeki her ürünü (post) tara
     for post in root.xpath('.//post'):
         try:
             sku = post.find('Sku').text.strip()
@@ -45,24 +45,33 @@ def start_tracking():
 
             new_data[sku] = {"Price": price, "Stock": stock, "Title": title}
 
-            if old_data and sku in old_data:
-                old = old_data[sku]
-                if old['Stock'] > 0 and stock <= 0:
-                    updates.append(f"❌ *STOK BİTTİ*\n{title}")
-                elif old['Price'] != price:
-                    updates.append(f"💰 *FİYAT DEĞİŞTİ*\n{title}\n📉 Eski: {old['Price']}\n📈 Yeni: {price}")
-                elif old['Stock'] <= 0 and stock > 0:
-                    updates.append(f"✅ *STOK GELDİ*\n{title}\nFiyat: {price}")
-            elif old_data:
-                updates.append(f"🆕 *YENİ ÜRÜN*\n{title}\nFiyat: {price}")
+            if old_data: # Eğer hafıza doluysa kıyasla
+                if sku in old_data:
+                    old = old_data[sku]
+                    if old['Stock'] > 0 and stock <= 0:
+                        updates.append(f"❌ *STOK BİTTİ*\n{title}")
+                    elif old['Price'] != price:
+                        updates.append(f"💰 *FİYAT DEĞİŞTİ*\n{title}\n📉 Eski: {old['Price']}\n📈 Yeni: {price}")
+                    elif old['Stock'] <= 0 and stock > 0:
+                        updates.append(f"✅ *STOK GELDİ*\n{title}\nFiyat: {price}")
+                else:
+                    updates.append(f"🆕 *YENİ ÜRÜN EKLENDİ*\n{title}\nFiyat: {price}")
+            else:
+                # Hafıza bomboşsa (ilk çalışma), sessizce doldur veya test için mesaj at
+                pass
         except:
-            continue # Hatalı ürünü atla, devam et
+            continue
 
+    # ÖNEMLİ: Yeni veriyi dosyaya yaz
     with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
         json.dump(new_data, f, ensure_ascii=False, indent=4)
-
-    for msg in updates:
-        send_telegram(msg)
+    
+    # Bildirimleri gönder (Çok fazla mesaj gelmemesi için ilk 5 tanesini gönderelim test için)
+    if updates:
+        for msg in updates[:10]: # Şimdilik sınırı 10 yaptık
+            send_telegram(msg)
+    else:
+        print("Değişiklik yok.")
 
 if __name__ == "__main__":
     start_tracking()
