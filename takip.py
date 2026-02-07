@@ -1,7 +1,7 @@
 import requests
-from lxml import etree
 import json
 import os
+import re
 
 # --- AYARLARIN ---
 BOT_TOKEN = "8591872798:AAH-WNlXVF01knmB6q_iRpQkpHp4oyZvo1w"
@@ -18,33 +18,38 @@ def send_telegram(message):
         pass
 
 def start_tracking():
-    print("Teknotok XML taranıyor...")
+    print("Teknotok XML Derin Tarama Başlatıldı...")
     try:
         response = requests.get(XML_URL, timeout=30)
         response.encoding = 'utf-8'
-        parser = etree.XMLParser(recover=True, encoding='utf-8')
-        root = etree.fromstring(response.content, parser=parser)
+        content = response.text
+
+        # XML yapısına takılmadan <post> ... </post> bloklarını cımbızla çekiyoruz
+        posts = re.findall(r'<post>(.*?)</post>', content, re.DOTALL)
         
         new_data = {}
-        # Paylaştığın yapıdaki <post> etiketlerini bulur
-        posts = root.xpath("//post")
         
-        for post in posts:
-            # Senin paylaştığın büyük harf düzeniyle verileri çekiyoruz
-            sku = post.findtext("Sku")
-            title = post.findtext("Title")
-            stock_val = post.findtext("Stock")
-            price = post.findtext("Price")
+        for post_content in posts:
+            # Her blok içinden verileri özel Regex ile ayıklıyoruz
+            sku_match = re.search(r'<Sku>(.*?)</Sku>', post_content)
+            title_match = re.search(r'<Title>(.*?)</Title>', post_content)
+            stock_match = re.search(r'<Stock>(.*?)</Stock>', post_content)
+            price_match = re.search(r'<Price>(.*?)</Price>', post_content)
 
-            if sku and title:
-                s_digits = "".join(filter(str.isdigit, str(stock_val)))
-                new_data[sku.strip()] = {
+            if sku_match and title_match:
+                sku = sku_match.group(1).strip()
+                title = title_match.group(1).strip()
+                stock_val = stock_match.group(1).strip() if stock_match else "0"
+                price = price_match.group(1).strip() if price_match else "0"
+
+                s_digits = "".join(filter(str.isdigit, stock_val))
+                new_data[sku] = {
                     "Stock": int(s_digits) if s_digits else 0,
-                    "Title": title.strip(),
+                    "Title": title,
                     "Price": price
                 }
 
-        # Hafıza yönetimi
+        # Hafıza Yönetimi
         if os.path.exists(HAFIZA_FILE) and os.path.getsize(HAFIZA_FILE) > 0:
             with open(HAFIZA_FILE, 'r', encoding='utf-8') as f:
                 old_data = json.load(f)
@@ -61,37 +66,24 @@ def start_tracking():
                     if new_stock != old_stock:
                         emoji = "📈" if new_stock > old_stock else "📉"
                         durum = "STOK ARTTI" if new_stock > old_stock else "STOK AZALDI"
-                        # İstediğin alt alta yerleşim düzeni
+                        
                         msg = (f"{emoji} *{durum}*\n\n"
                                f"*Ürün:* {info['Title']}\n"
                                f"*SKU:* `{sku}`\n"
                                f"*Eski Stok:* {old_stock}\n"
                                f"*Yeni Stok:* {new_stock}\n"
-                               f"*Fiyat:* {info.get('Price', '---')} TL")
+                               f"*Fiyat:* {info['Price']} TL")
                         updates.append(msg)
                 else:
                     msg = (f"🆕 *YENİ ÜRÜN*\n\n"
                            f"*Ürün:* {info['Title']}\n"
                            f"*SKU:* `{sku}`\n"
                            f"*Stok:* {info['Stock']}\n"
-                           f"*Fiyat:* {info.get('Price', '---')} TL")
+                           f"*Fiyat:* {info['Price']} TL")
                     updates.append(msg)
 
-        # Güncel veriyi kaydet
         with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
             json.dump(new_data, f, ensure_ascii=False, indent=4)
 
-        # Raporlama
         if not old_data and len(new_data) > 0:
-            send_telegram(f"✅ *Bağlantı Kuruldu!*\nTeknotok XML'den {len(new_data)} ürün başarıyla hafızaya alındı. İzleme başladı.")
-        
-        for msg in updates:
-            send_telegram(msg)
-            
-        print(f"İşlem tamam. Bulunan ürün: {len(new_data)}")
-
-    except Exception as e:
-        print(f"Hata: {e}")
-
-if __name__ == "__main__":
-    start_tracking()
+            send_telegram(f"✅ *Sistem
