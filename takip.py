@@ -18,13 +18,17 @@ def send_telegram(message):
         pass
 
 def start_tracking():
-    print("Teknotok XML taranıyor...")
+    print("XML Verisi Çekiliyor (Tarayıcı Taklidi İle)...")
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
     try:
-        response = requests.get(XML_URL, timeout=30)
+        response = requests.get(XML_URL, headers=headers, timeout=30)
         response.encoding = 'utf-8'
         content = response.text
 
-        # XML yapısına takılmadan <post> bloklarını ayıkla
+        # Regex (Cımbız) ile her postu yakala
         posts = re.findall(r'<post>(.*?)</post>', content, re.DOTALL)
         
         new_data = {}
@@ -47,7 +51,9 @@ def start_tracking():
                     "Price": price
                 }
 
-        # Hafıza Yönetimi
+        print(f"Tarama Tamamlandı. Bulunan Ürün: {len(new_data)}")
+
+        # Hafıza işlemleri
         if os.path.exists(HAFIZA_FILE) and os.path.getsize(HAFIZA_FILE) > 0:
             with open(HAFIZA_FILE, 'r', encoding='utf-8') as f:
                 old_data = json.load(f)
@@ -60,7 +66,7 @@ def start_tracking():
                 if sku in old_data:
                     if info['Stock'] != old_data[sku]['Stock']:
                         emoji = "📈" if info['Stock'] > old_data[sku]['Stock'] else "📉"
-                        durum = "STOK ARTTI" if info['Stock'] > old_data[sku]['Stock'] else "STOK AZALDI"
+                        durum = "STOK GÜNCELLENDİ"
                         msg = (f"{emoji} *{durum}*\n\n"
                                f"*Ürün:* {info['Title']}\n"
                                f"*SKU:* `{sku}`\n"
@@ -69,24 +75,17 @@ def start_tracking():
                                f"*Fiyat:* {info['Price']} TL")
                         updates.append(msg)
                 else:
-                    msg = (f"🆕 *YENİ ÜRÜN*\n\n"
-                           f"*Ürün:* {info['Title']}\n"
-                           f"*SKU:* `{sku}`\n"
-                           f"*Stok:* {info['Stock']}\n"
-                           f"*Fiyat:* {info['Price']} TL")
-                    updates.append(msg)
+                    # Yeni ürünleri sadece hafızaya al, ilk seferde mesaj yağmuru yapma
+                    pass
 
         with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
             json.dump(new_data, f, ensure_ascii=False, indent=4)
 
         if not old_data and len(new_data) > 0:
-            basari_mesaji = f"✅ *BAŞARDIK!*\n\n{len(new_data)} ürün başarıyla hafızaya alındı. Sistem takibe başladı."
-            send_telegram(basari_mesaji)
+            send_telegram(f"🎯 *BAŞARDIK!* \n\nSistem {len(new_data)} ürünü hafızaya aldı ve pusuya yattı. Değişim olduğunda haber vereceğim.")
         
-        for msg in updates:
+        for msg in updates[:10]:
             send_telegram(msg)
-            
-        print(f"Bitti. İşlenen ürün: {len(new_data)}")
 
     except Exception as e:
         print(f"Hata: {e}")
