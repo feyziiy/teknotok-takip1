@@ -18,7 +18,7 @@ def send_telegram(message):
         pass
 
 def start_tracking():
-    print("Teknotok XML taranıyor...")
+    print("Teknotok XML derin tarama baslatildi...")
     try:
         response = requests.get(XML_URL, timeout=30)
         response.encoding = 'utf-8'
@@ -26,25 +26,26 @@ def start_tracking():
         root = etree.fromstring(response.content, parser=parser)
         
         new_data = {}
-        # Senin XML yapındaki <post> etiketlerini hedef alıyoruz
-        posts = root.xpath("//post")
+        
+        # Namespace (isim uzayi) ne olursa olsun 'post' etiketlerini bul
+        posts = root.xpath("//*[local-name()='post']")
         
         for post in posts:
-            # Etiketlerin tam isimlerini (Büyük-Küçük harf duyarlı) kullanıyoruz
-            sku = post.findtext("Sku")
-            title = post.findtext("Title")
-            stock_val = post.findtext("Stock")
-            price = post.findtext("Price")
+            # Alt etiketleri isim uzayindan bagimsiz cekiyoruz
+            sku = post.xpath("string(descendant::*[local-name()='Sku'])")
+            title = post.xpath("string(descendant::*[local-name()='Title'])")
+            stock_val = post.xpath("string(descendant::*[local-name()='Stock'])")
+            price = post.xpath("string(descendant::*[local-name()='Price'])")
 
             if sku and title:
                 s_digits = "".join(filter(str.isdigit, str(stock_val)))
                 new_data[sku.strip()] = {
                     "Stock": int(s_digits) if s_digits else 0,
                     "Title": title.strip(),
-                    "Price": price
+                    "Price": price.strip() if price else "0"
                 }
 
-        # Hafıza yönetimi
+        # Hafiza Islemleri
         if os.path.exists(HAFIZA_FILE) and os.path.getsize(HAFIZA_FILE) > 0:
             with open(HAFIZA_FILE, 'r', encoding='utf-8') as f:
                 old_data = json.load(f)
@@ -61,39 +62,36 @@ def start_tracking():
                     if new_stock != old_stock:
                         emoji = "📈" if new_stock > old_stock else "📉"
                         durum = "STOK ARTTI" if new_stock > old_stock else "STOK AZALDI"
-                        # Talimatına uygun yerleşim düzeni
+                        
                         msg = (f"{emoji} *{durum}*\n\n"
                                f"*Ürün:* {info['Title']}\n"
                                f"*SKU:* `{sku}`\n"
                                f"*Eski Stok:* {old_stock}\n"
                                f"*Yeni Stok:* {new_stock}\n"
-                               f"*Fiyat:* {info.get('Price', '---')} TL")
+                               f"*Fiyat:* {info['Price']} TL")
                         updates.append(msg)
                 else:
-                    # Yeni eklenen ürünler için düzen
                     msg = (f"🆕 *YENİ ÜRÜN EKLENDİ*\n\n"
                            f"*Ürün:* {info['Title']}\n"
                            f"*SKU:* `{sku}`\n"
                            f"*Stok:* {info['Stock']}\n"
-                           f"*Fiyat:* {info.get('Price', '---')} TL")
+                           f"*Fiyat:* {info['Price']} TL")
                     updates.append(msg)
 
-        # Güncel veriyi kaydet
         with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
             json.dump(new_data, f, ensure_ascii=False, indent=4)
 
-        # Bilgilendirme
+        # Telegram Bilgilendirme
         if not old_data and len(new_data) > 0:
-            send_telegram(f"✅ *Sistem Başlatıldı!*\nTeknotok XML'den toplam {len(new_data)} ürün hafızaya alındı. Artık sadece değişimleri bildireceğim.")
+            send_telegram(f"✅ *Sistem Baslatildi!*\nTeknotok deposundan {len(new_data)} urun hafizaya alindi. Pusuya yatildi 🕵️")
         
-        # Değişim mesajlarını gönder
         for msg in updates:
             send_telegram(msg)
             
-        print(f"Bitti. İşlenen ürün: {len(new_data)}")
+        print(f"Islem tamam. Hafizadaki toplam urun: {len(new_data)}")
 
     except Exception as e:
-        print(f"Hata: {e}")
+        print(f"Hata detayi: {e}")
 
 if __name__ == "__main__":
     start_tracking()
