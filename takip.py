@@ -18,7 +18,7 @@ def send_telegram(message):
         pass
 
 def start_tracking():
-    print("Teknotok XML derin tarama baslatildi...")
+    print("Teknotok XML taranıyor...")
     try:
         response = requests.get(XML_URL, timeout=30)
         response.encoding = 'utf-8'
@@ -26,26 +26,25 @@ def start_tracking():
         root = etree.fromstring(response.content, parser=parser)
         
         new_data = {}
-        
-        # Namespace (isim uzayi) ne olursa olsun 'post' etiketlerini bul
-        posts = root.xpath("//*[local-name()='post']")
+        # Paylaştığın yapıdaki <post> etiketlerini bulur
+        posts = root.xpath("//post")
         
         for post in posts:
-            # Alt etiketleri isim uzayindan bagimsiz cekiyoruz
-            sku = post.xpath("string(descendant::*[local-name()='Sku'])")
-            title = post.xpath("string(descendant::*[local-name()='Title'])")
-            stock_val = post.xpath("string(descendant::*[local-name()='Stock'])")
-            price = post.xpath("string(descendant::*[local-name()='Price'])")
+            # Senin paylaştığın büyük harf düzeniyle verileri çekiyoruz
+            sku = post.findtext("Sku")
+            title = post.findtext("Title")
+            stock_val = post.findtext("Stock")
+            price = post.findtext("Price")
 
             if sku and title:
                 s_digits = "".join(filter(str.isdigit, str(stock_val)))
                 new_data[sku.strip()] = {
                     "Stock": int(s_digits) if s_digits else 0,
                     "Title": title.strip(),
-                    "Price": price.strip() if price else "0"
+                    "Price": price
                 }
 
-        # Hafiza Islemleri
+        # Hafıza yönetimi
         if os.path.exists(HAFIZA_FILE) and os.path.getsize(HAFIZA_FILE) > 0:
             with open(HAFIZA_FILE, 'r', encoding='utf-8') as f:
                 old_data = json.load(f)
@@ -62,36 +61,37 @@ def start_tracking():
                     if new_stock != old_stock:
                         emoji = "📈" if new_stock > old_stock else "📉"
                         durum = "STOK ARTTI" if new_stock > old_stock else "STOK AZALDI"
-                        
+                        # İstediğin alt alta yerleşim düzeni
                         msg = (f"{emoji} *{durum}*\n\n"
                                f"*Ürün:* {info['Title']}\n"
                                f"*SKU:* `{sku}`\n"
                                f"*Eski Stok:* {old_stock}\n"
                                f"*Yeni Stok:* {new_stock}\n"
-                               f"*Fiyat:* {info['Price']} TL")
+                               f"*Fiyat:* {info.get('Price', '---')} TL")
                         updates.append(msg)
                 else:
-                    msg = (f"🆕 *YENİ ÜRÜN EKLENDİ*\n\n"
+                    msg = (f"🆕 *YENİ ÜRÜN*\n\n"
                            f"*Ürün:* {info['Title']}\n"
                            f"*SKU:* `{sku}`\n"
                            f"*Stok:* {info['Stock']}\n"
-                           f"*Fiyat:* {info['Price']} TL")
+                           f"*Fiyat:* {info.get('Price', '---')} TL")
                     updates.append(msg)
 
+        # Güncel veriyi kaydet
         with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
             json.dump(new_data, f, ensure_ascii=False, indent=4)
 
-        # Telegram Bilgilendirme
+        # Raporlama
         if not old_data and len(new_data) > 0:
-            send_telegram(f"✅ *Sistem Baslatildi!*\nTeknotok deposundan {len(new_data)} urun hafizaya alindi. Pusuya yatildi 🕵️")
+            send_telegram(f"✅ *Bağlantı Kuruldu!*\nTeknotok XML'den {len(new_data)} ürün başarıyla hafızaya alındı. İzleme başladı.")
         
         for msg in updates:
             send_telegram(msg)
             
-        print(f"Islem tamam. Hafizadaki toplam urun: {len(new_data)}")
+        print(f"İşlem tamam. Bulunan ürün: {len(new_data)}")
 
     except Exception as e:
-        print(f"Hata detayi: {e}")
+        print(f"Hata: {e}")
 
 if __name__ == "__main__":
     start_tracking()
