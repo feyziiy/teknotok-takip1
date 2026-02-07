@@ -28,5 +28,5 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add urun_takip_hafiza.json
-          git commit -m "Hafiza Guncellendi" || echo "Degisiklik yok"
+          git commit -m "Hafiza Guncellendi" || echo "No changes"
           git push
