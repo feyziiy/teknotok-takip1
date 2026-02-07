@@ -12,13 +12,21 @@ HAFIZA_FILE = "urun_takip_hafiza.json"
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    r = requests.post(url, json=payload, timeout=10)
-    print(f"Telegram Yanıtı: {r.status_code}") # Actions ekranında görmek için
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except:
+        pass
 
 def start_tracking():
-    print("İşlem başlıyor...")
+    print("İşlem başlıyor, bozuk karakterler temizleniyor...")
+    
+    # XML'i indir ve hataları görmezden gelerek oku
     response = requests.get(XML_URL, timeout=30)
-    root = etree.fromstring(response.content)
+    response.encoding = 'utf-8'
+    
+    # BU KISIM HATAYI ÇÖZER: 'recover=True' bozuk XML'i tamir eder
+    parser = etree.XMLParser(recover=True, encoding='utf-8')
+    root = etree.fromstring(response.content, parser=parser)
     
     # Hafızayı oku
     if os.path.exists(HAFIZA_FILE):
@@ -33,32 +41,41 @@ def start_tracking():
     new_data = {}
     updates = []
 
-    # XML tarama
+    # XML'deki her postu tara
     for post in root.xpath('.//post'):
         try:
-            sku = post.find('Sku').text.strip()
-            title = post.find('Title').text.strip()
-            price = post.find('Price').text.strip()
-            stock = int(''.join(filter(str.isdigit, post.find('Stock').text)))
-            new_data[sku] = {"Price": price, "Stock": stock, "Title": title}
+            sku_el = post.find('Sku')
+            title_el = post.find('Title')
+            price_el = post.find('Price')
+            stock_el = post.find('Stock')
+            
+            if sku_el is not None and title_el is not None:
+                sku = sku_el.text.strip()
+                title = title_el.text.strip()
+                price = price_el.text.strip() if price_el is not None else "0"
+                stock_text = stock_el.text if stock_el is not None else "0"
+                stock = int(''.join(filter(str.isdigit, stock_text)))
+                
+                new_data[sku] = {"Price": price, "Stock": stock, "Title": title}
+
+                # Kıyaslama Yap (Eski veri varsa)
+                if old_data and sku in old_data:
+                    old = old_data[sku]
+                    if int(stock) < int(old['Stock']):
+                        fark = int(old['Stock']) - int(stock)
+                        updates.append(f"📉 *STOK AZALDI (-{fark})*\n{title}\nKalan: {stock}")
         except:
             continue
 
-    # ZORUNLU TETİKLEME: Eğer hafıza boşsa veya ilk kez doluyorsa mesaj at
+    # Değişiklik yoksa bile botun çalıştığını anlaman için ilk seferde mesaj at
     if not old_data:
-        send_telegram("✅ *Sistem Başlatıldı!*\nHafıza ilk kez oluşturuldu, artık takibe hazırım.")
+        send_telegram("✅ *Sistem Başlatıldı!* XML başarıyla okundu ve hafıza oluşturuldu.")
     
-    # Değişiklik kontrolü
-    for sku, info in new_data.items():
-        if sku in old_data:
-            if old_data[sku]['Stock'] != info['Stock']:
-                updates.append(f"📦 *STOK DEĞİŞTİ*\n{info['Title']}\nYeni Stok: {info['Stock']}")
-
     # Dosyayı kaydet
     with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
         json.dump(new_data, f, ensure_ascii=False, indent=4)
     
-    # Güncellemeleri gönder
+    # Mesajları gönder
     for msg in updates[:5]:
         send_telegram(msg)
 
