@@ -20,45 +20,35 @@ def start_tracking():
     parser = etree.XMLParser(recover=True, encoding='utf-8')
     root = etree.fromstring(response.content, parser=parser)
     
-    # XML yapısını esnek tarama (post, item veya urun olabilir)
-    posts = root.xpath('.//post') or root.xpath('.//item') or root.xpath('.//*[local-name()="post"]')
+    # Adım 1: Tüm olası ürün etiketlerini dene (Büyük/Küçük harf duyarlı)
+    items = root.xpath('//post') or root.xpath('//item') or root.xpath('//product') or root.xpath('//urun')
     
-    if not posts:
-        # Eğer hala bulunamadıysa root altındaki tüm çocukları dene
-        posts = list(root.iterchildren())
-        if len(posts) < 5: # Çok azsa yanlış yerdir
-            send_telegram("⚠️ XML yapısı hala çözülemedi. Lütfen XML linkini kontrol et.")
-            return
-
-    if os.path.exists(HAFIZA_FILE) and os.path.getsize(HAFIZA_FILE) > 0:
-        with open(HAFIZA_FILE, 'r', encoding='utf-8') as f:
-            old_data = json.load(f)
-    else:
-        old_data = {}
+    # Eğer yukarıdakiler boşsa, XML'deki tüm hiyerarşiyi tara
+    if not items:
+        items = root.xpath('//*[sku or Sku or ID]')
 
     new_data = {}
     
-    for post in posts:
+    for item in items:
         try:
-            # Etiket isimlerini dinamik bul (Sku, stock vb.)
-            sku = post.findtext('.//Sku') or post.findtext('.//sku') or post.findtext('.//ID')
-            title = post.findtext('.//Title') or post.findtext('.//title') or post.findtext('.//name')
-            price = post.findtext('.//Price') or post.findtext('.//price') or "0"
-            stock_text = post.findtext('.//Stock') or post.findtext('.//stock') or post.findtext('.//quantity') or "0"
+            # Sku, Title, Price ve Stock değerlerini her türlü etikette ara
+            sku = (item.findtext('Sku') or item.findtext('sku') or 
+                   item.findtext('ID') or item.findtext('id') or 
+                   item.findtext('product_id'))
             
+            title = (item.findtext('Title') or item.findtext('title') or 
+                     item.findtext('Name') or item.findtext('name') or 
+                     item.findtext('post_title'))
+            
+            price = (item.findtext('Price') or item.findtext('price') or 
+                     item.findtext('Regular_price') or "0")
+            
+            stock_val = (item.findtext('Stock') or item.findtext('stock') or 
+                         item.findtext('Quantity') or item.findtext('stock_quantity') or "0")
+
             if sku and title:
-                stock = int(''.join(filter(str.isdigit, str(stock_text))))
-                new_data[sku.strip()] = {"Price": price.strip(), "Stock": stock, "Title": title.strip()}
-        except:
-            continue
-
-    with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(new_data, f, ensure_ascii=False, indent=4)
-    
-    if not old_data and new_data:
-        send_telegram(f"✅ *Başardık!* \n{len(new_data)} adet ürün bulundu ve hafıza oluşturuldu. Artık takibe hazırım.")
-    elif not new_data:
-        send_telegram("❌ Veri çekildi ama ürün detayları (Sku/Title) eşleşmedi.")
-
-if __name__ == "__main__":
-    start_tracking()
+                # Stok verisindeki sayı olmayan karakterleri temizle
+                stock = int(''.join(filter(str.isdigit, str(stock_val)))) if any(c.isdigit() for c in str(stock_val)) else 0
+                new_data[sku.strip()] = {
+                    "Price": price.strip(),
+                    "
