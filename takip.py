@@ -26,17 +26,14 @@ def start_tracking():
         root = etree.fromstring(response.content, parser=parser)
         
         new_data = {}
-        # XML icindeki her seyi tara
+        # Tum hiyerarsiyi tara, sku ve baslik iceren her seyi al
         for item in root.xpath("//*"):
-            # Bir elementin alt dallarinda 'sku' veya 'id' varsa onu urun say
-            sku = (item.findtext('.//Sku') or item.findtext('.//sku') or 
-                   item.findtext('.//ID') or item.findtext('.//id'))
-            title = (item.findtext('.//Title') or item.findtext('.//title') or 
-                     item.findtext('.//Name') or item.findtext('.//name'))
-            stock = (item.findtext('.//Stock') or item.findtext('.//stock') or "0")
+            sku = (item.findtext('.//Sku') or item.findtext('.//sku') or item.findtext('.//ID'))
+            title = (item.findtext('.//Title') or item.findtext('.//title') or item.findtext('.//Name'))
+            stock_val = (item.findtext('.//Stock') or item.findtext('.//stock') or "0")
 
             if sku and title:
-                s_digits = "".join(filter(str.isdigit, str(stock)))
+                s_digits = "".join(filter(str.isdigit, str(stock_val)))
                 new_data[sku.strip()] = {
                     "Stock": int(s_digits) if s_digits else 0,
                     "Title": title.strip()
@@ -49,7 +46,7 @@ def start_tracking():
         else:
             old_data = {}
 
-        # Sadece degisiklik varsa mesaj hazirla
+        # Sadece degisiklikleri belirle
         updates = []
         if old_data:
             for sku, info in new_data.items():
@@ -59,20 +56,22 @@ def start_tracking():
                 else:
                     updates.append(f"🆕 *YENI URUN*\n{info['Title']}")
 
-        # Hafizayi kaydet
+        # Hafizayi guncelle (Dosyayi dolduran kisim burasi)
         with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
             json.dump(new_data, f, ensure_ascii=False, indent=4)
 
-        # Telegram bilgilendirme
+        # Telegram bilgilendirmesi
         if not old_data and len(new_data) > 0:
-            send_telegram(f"🎯 *BASARILI!* \n{len(new_data)} urun hafizaya alindi. Takip basladi.")
+            send_telegram(f"✅ *Sistem Aktif!* \n{len(new_data)} ürün takibe alındı.")
         
-        for msg in updates[:10]:
+        for msg in updates[:5]:
             send_telegram(msg)
+            
+        print(f"Bitti. Bulunan: {len(new_data)}")
 
     except Exception as e:
         print(f"Hata: {e}")
-        send_telegram(f"🚨 *Hata:* {str(e)}")
+        send_telegram(f"🚨 Hata: {str(e)}")
 
 if __name__ == "__main__":
     start_tracking()
