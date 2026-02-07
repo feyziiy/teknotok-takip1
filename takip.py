@@ -2,28 +2,35 @@ import requests
 from lxml import etree
 import json
 import os
+import sys
 
+# AYARLARIN
 BOT_TOKEN = "8591872798:AAH-WNlXVF01knmB6q_iRpQkpHp4oyZvo1w"
 CHAT_ID = "7798613067"
 XML_URL = "https://teknotok.com/wp-content/uploads/teknotok-feeds/teknotokxml.xml"
 HAFIZA_FILE = "urun_takip_hafiza.json"
 
 def send_telegram(message):
+    print(f"Mesaj Gonderiliyor: {message}")
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
-        requests.post(url, json=payload, timeout=10)
-    except:
-        pass
+        r = requests.post(url, json=payload, timeout=15)
+        print(f"Telegram Yaniti: {r.status_code}")
+    except Exception as e:
+        print(f"Baglanti Hatasi: {e}")
 
 def start_tracking():
+    # TEST MESAJI (Bunu goruyorsan kod calisiyor demektir)
+    send_telegram("🔄 *Kontrol Başladı:* Veriler taranıyor...")
+
     try:
         response = requests.get(XML_URL, timeout=30)
         response.encoding = 'utf-8'
         parser = etree.XMLParser(recover=True, encoding='utf-8')
         root = etree.fromstring(response.content, parser=parser)
         
-        # XML içindeki tüm ürün benzeri yapıları tara
+        # XML'i kazıyalım
         items = root.xpath('//*[local-name()="post" or local-name()="item" or local-name()="product"]')
         if not items:
             items = root.xpath('//*[sku or Sku or ID]')
@@ -35,35 +42,18 @@ def start_tracking():
             stock_val = item.findtext('.//Stock') or item.findtext('.//stock') or "0"
             
             if sku and title:
-                stock = int(''.join(filter(str.isdigit, str(stock_val)))) if any(c.isdigit() for c in str(stock_val)) else 0
+                s_str = "".join(filter(str.isdigit, str(stock_val)))
+                stock = int(s_str) if s_str else 0
                 new_data[sku.strip()] = {"Stock": stock, "Title": title.strip()}
 
-        if os.path.exists(HAFIZA_FILE) and os.path.getsize(HAFIZA_FILE) > 0:
-            with open(HAFIZA_FILE, 'r', encoding='utf-8') as f:
-                old_data = json.load(f)
-        else:
-            old_data = {}
-
-        updates = []
-        if old_data:
-            for sku, info in new_data.items():
-                if sku in old_data:
-                    if info['Stock'] < old_data[sku]['Stock']:
-                        updates.append(f"📉 *STOK AZALDI*\n{info['Title']}\nKalan: {info['Stock']}")
-                else:
-                    updates.append(f"🆕 *YENİ ÜRÜN*\n{info['Title']}")
-
+        # Hafıza yazımı
         with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
             json.dump(new_data, f, ensure_ascii=False, indent=4)
-
-        if not old_data and new_data:
-            send_telegram(f"✅ *Sistem Hazır!* {len(new_data)} ürün takibe alındı.")
         
-        for msg in updates[:10]:
-            send_telegram(msg)
-            
+        send_telegram(f"✅ *Tarama Tamamlandı:* {len(new_data)} ürün hafızaya alındı.")
+
     except Exception as e:
-        send_telegram(f"🚨 Hata oluştu: {str(e)}")
+        send_telegram(f"🚨 *Hata Yakalandı:* {str(e)}")
 
 if __name__ == "__main__":
     start_tracking()
