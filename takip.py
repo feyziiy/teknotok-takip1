@@ -18,7 +18,7 @@ def send_telegram(message):
         pass
 
 def start_tracking():
-    print("Sistem baslatildi...")
+    print("Sistem baslatildi. XML verisi okunuyor...")
     try:
         response = requests.get(XML_URL, timeout=30)
         response.encoding = 'utf-8'
@@ -26,11 +26,19 @@ def start_tracking():
         root = etree.fromstring(response.content, parser=parser)
         
         new_data = {}
-        # Tum hiyerarsiyi tara, sku ve baslik iceren her seyi al
+        # XML icindeki her bir ogeye bak (etiket ismi ne olursa olsun)
         for item in root.xpath("//*"):
-            sku = (item.findtext('.//Sku') or item.findtext('.//sku') or item.findtext('.//ID'))
-            title = (item.findtext('.//Title') or item.findtext('.//title') or item.findtext('.//Name'))
-            stock_val = (item.findtext('.//Stock') or item.findtext('.//stock') or "0")
+            # Eger bu ogenin icinde Sku veya ID varsa, bu bir urundur
+            sku = (item.findtext('.//*[local-name()="Sku"]') or 
+                   item.findtext('.//*[local-name()="sku"]') or 
+                   item.findtext('.//*[local-name()="ID"]'))
+            
+            title = (item.findtext('.//*[local-name()="Title"]') or 
+                     item.findtext('.//*[local-name()="title"]') or 
+                     item.findtext('.//*[local-name()="Name"]'))
+            
+            stock_val = (item.findtext('.//*[local-name()="Stock"]') or 
+                         item.findtext('.//*[local-name()="stock"]') or "0")
 
             if sku and title:
                 s_digits = "".join(filter(str.isdigit, str(stock_val)))
@@ -46,7 +54,6 @@ def start_tracking():
         else:
             old_data = {}
 
-        # Sadece degisiklikleri belirle
         updates = []
         if old_data:
             for sku, info in new_data.items():
@@ -56,21 +63,23 @@ def start_tracking():
                 else:
                     updates.append(f"🆕 *YENI URUN*\n{info['Title']}")
 
-        # Hafizayi guncelle (Dosyayi dolduran kisim burasi)
+        # Dosyayi guncelle
         with open(HAFIZA_FILE, 'w', encoding='utf-8') as f:
             json.dump(new_data, f, ensure_ascii=False, indent=4)
 
-        # Telegram bilgilendirmesi
+        # Telegram bilgilendirme
         if not old_data and len(new_data) > 0:
-            send_telegram(f"✅ *Sistem Aktif!* \n{len(new_data)} ürün takibe alındı.")
+            send_telegram(f"✅ *BASARDIK!* \n{len(new_data)} urun hafizaya alindi. Takip pusuya yatti.")
+        elif len(new_data) == 0:
+            send_telegram("❌ XML icinde urun verisi bulunamadi. Etiket isimleri uyumsuz.")
         
         for msg in updates[:5]:
             send_telegram(msg)
             
-        print(f"Bitti. Bulunan: {len(new_data)}")
+        print(f"Bitti. Bulunan urun sayisi: {len(new_data)}")
 
     except Exception as e:
-        print(f"Hata: {e}")
+        print(f"Kritik Hata: {e}")
         send_telegram(f"🚨 Hata: {str(e)}")
 
 if __name__ == "__main__":
