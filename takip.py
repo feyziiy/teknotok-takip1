@@ -36,19 +36,20 @@ def start_tracking():
 
     for post in root.xpath('.//post'):
         try:
-            sku = post.find('Sku').text.strip()
-            title = post.find('Title').text.strip()
-            price = post.find('Price').text.strip()
-            stock_text = post.find('Stock').text
-            stock = int(''.join(filter(str.isdigit, stock_text))) if stock_text else 0
-            new_data[sku] = {"Price": price, "Stock": stock, "Title": title}
-
+           # ... (üst kısımlar aynı)
             if old_data and sku in old_data:
                 old = old_data[sku]
+                # Fiyat Değişimi
                 if old['Price'] != price:
                     updates.append(f"💰 *FİYAT DEĞİŞTİ*\n{title}\n📉 {old['Price']} -> 📈 {price}")
-                if old['Stock'] > 0 and stock <= 0:
-                    updates.append(f"❌ *STOK BİTTİ*\n{title}")
+                
+                # STOK TAKİBİ (Yeni Mantık)
+                if int(stock) < int(old['Stock']):
+                    fark = int(old['Stock']) - int(stock)
+                    updates.append(f"📉 *STOK AZALDI (-{fark})*\n{title}\nKalan Stok: {stock}")
+                elif int(stock) > int(old['Stock']):
+                    updates.append(f"📈 *STOK ARTTI*\n{title}\nYeni Stok: {stock}")
+# ... (alt kısımlar aynı)
         except:
             continue
 
